@@ -1,0 +1,4 @@
+bin/r_scripts/.Rhistory
+*.filepart
+*.out.tab
+*.tsv
