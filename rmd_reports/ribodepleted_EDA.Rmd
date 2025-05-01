@@ -302,6 +302,20 @@ genes_to_keep <- apply(exp_mat >= min_reads,
 # Final gene count matrix
 exp_mat <- exp_mat[genes_to_keep,]
 
+filtered_file <- file.path(data_path, 
+                           "biotypes", 
+                           paste("protein_coding_exp",
+                                 "_filtered",
+                                 "-S", min_samples,
+                                 "-R", min_reads,
+                                 ".tsv", 
+                                 sep = ""))
+if(!file.exists(filtered_file)){
+  exp_mat %>%
+    rownames_to_column("gene_id") %>%
+    write_tsv(filtered_file)  
+}
+
 ```
 
 Now we repeat the previous visualizations to explore how the count distributions changed after filtering

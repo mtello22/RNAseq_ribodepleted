@@ -1,0 +1,412 @@
+---
+title: "DESeq2"
+author: "Marco Tello"
+date: "2025-05-01"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# DEA
+library(DESeq2)
+# Data format and ID conversion
+library(data.table)
+library(tidyverse)
+# Plot generation 
+library(ggplot2)
+library(factoextra)
+library(pheatmap)
+# Biological annotation
+library(biomaRt)
+
+# Custom functions
+custom_volcano <- function(DEG_results, alpha, log2FC){
+  # DESeq2 will make some adjusted pvalues NA, details in their docs
+  num_na <- sum(is.na(DEG_results$padj))
+  # Ommit na results and categorize each gene
+  temp <- as.data.table(na.omit(DEG_results))
+  temp[, padj := ifelse(padj == 0, 8e-305, padj)]
+  temp[, alpha := ifelse(padj < alpha, TRUE, FALSE)]
+  temp[, log2FC := ifelse(abs(log2FoldChange) >= log2FC, TRUE, FALSE)]
+  temp[, DEG := "No"]
+  temp[, DEG := ifelse(alpha & !log2FC, "FDR", DEG)]
+  temp[, DEG := ifelse(alpha & log2FC, "FDR and FC", DEG)]
+  # Include gene names for the highest fold changes
+  # Genes not selected will have their name set to "" in the plot
+  setorder(temp, "log2FoldChange")
+  # Make plot
+  ggplot(temp, aes(x = log2FoldChange, 
+                   y = -log10(padj), 
+                   color = DEG)) +
+    geom_hline(yintercept = -log10(alpha), 
+               linetype = "dashed", color = "gray", linewidth = 1) +
+    geom_vline(xintercept = log2FC, 
+               linetype = "dashed", color = "gray", linewidth = 1) +
+    geom_vline(xintercept = -log2FC, 
+               linetype = "dashed", color = "gray", linewidth = 1) +
+    geom_point(alpha = 0.4, size = 3) +
+    scale_x_continuous(breaks = seq(ceiling(range(temp$log2FoldChange))[1],
+                                    ceiling(range(temp$log2FoldChange))[2])) +
+    scale_color_manual(values = c("No" = "darkgray", 
+                                  "FDR" = "blue", 
+                                  "FDR and FC" = "red"), 
+                       labels = c(paste("FDR (", 
+                                        as.character(table(temp$DEG)[1]), 
+                                        ")", sep = ""), 
+                                  paste("FDR and FC (",
+                                        as.character(table(temp$DEG)[2]),")", sep = ""),
+                                  paste("Not Sig. (", 
+                                        as.character(table(temp$DEG)[3] + num_na), ")", sep = ""))) +
+    ylab(expression(-log[10]("FDR")))+
+    xlab(expression(log[2]("Fold Change")))+
+    labs(color = "DEG status") +
+    theme_bw()
+}
+
+visualize_degs <- function(DEG_results, alpha, log2FC){
+  histogram <- ggplot(na.omit(DEG_results), aes(x = pvalue)) + 
+    geom_histogram(binwidth = 0.05, breaks = seq(0, 1, by = 0.05), 
+                   fill = "gray", color = "black") + 
+    xlab(expression(italic("p-value")))+
+    labs(title = "Histogram of p-values", y = "Frequency")+
+    theme_bw()
+  volcano <- custom_volcano(DEG_results, alpha, log2FC)
+  return(list(histogram, volcano))
+}
+
+
+data_path <- "~/GitHub/RNAseq_ribodepleted/output/counts/biotypes"
+theme_set(theme_bw())
+
+```
+
+
+# Differential expression analysis
+
+This report is to identify differentially expressed genes across the following conditions:
+
+1. low glucose control (LG) 
+2. high glucose control (HG)
+3. high glucose high fat control (HF)
+4. high glucose high fat PTS (PTS)
+5. high glucose high fat QUE (QUE)
+
+
+## Format condition names
+
+The first step is to load the selected expression data and format the condition names to match the experimental conditions.
+
+```{r}
+# Read exp table
+input_file <- file.path(data_path, "protein_coding_exp_filtered-S10-R6.tsv")
+exp_df <- read.table(input_file, header = TRUE)
+
+# Convert data.table to integer matrix
+exp_matrix <- exp_df %>%
+  dplyr::select(!gene_id) %>%
+  as.matrix()
+rownames(exp_matrix) <- exp_df$gene_id
+
+# Capture metadata in data frame
+condition <- colnames(exp_matrix) %>% 
+  str_replace(pattern = "\\d_S\\d+", 
+              replacement = "")
+
+# Format condition to match labels
+condition <- case_when(
+    condition == "C" ~ "HG",
+    condition == "F" ~ "HF",
+    condition == "L" ~ "LG",
+    condition == "P" ~ "PTS",
+    condition == "Q" ~ "QUE")
+# Create variables for DE analysis
+annot <- data.frame(condition = factor(condition, levels = c("LG", "HG", "HF", "PTS", "QUE")),
+                    Hglucose  = ifelse(condition == "LG", 0, 1),
+                    Hfat      = ifelse(condition %in% c("LG", "HG"), 0, 1),
+                    PTS       = ifelse(condition == "PTS", 1, 0),
+                    QUE       = ifelse(condition == "QUE", 1, 0),
+                    row.names = colnames(exp_matrix))
+
+annot 
+
+```
+
+Based on the experimental groups we created the appropriate labels and encoded conditions as binary columns to facilitate building models. 
+
+## Set-up DEA parameters
+
+For consistency, we'll define the parameters for differential expression here:
+
+```{r}
+alpha <- 0.05
+log2FC <- 2
+```
+
+The comparisons we'll be looking into are the following:
+
+
+1. LG vs HG - to see how increasing glucose levels affects gene expression without fat
+2. HG vs HF - to isolate the impact of the high fat component under hyperglycemic conditions
+3. HF vs PTS -  whether PTS can reverse or alter HF-induced gene changes
+4. HF vs QUE - whether QUE can reverse or alter HF-induced gene changes
+5. PTS vs QUE - to identify differences in molecular responses between the two compounds.
+6. LG vs PTS - to assess whether PTS brings HF-exposed cells back toward the low-glucose baseline
+7. LG vs QUE - to assess whether QUE brings HF-exposed cells back toward the low-glucose baseline
+
+
+
+Thus, we'll create a section for each of the target comparisons containing:
+
+* Model fitting and result selection
+* p-value histograms
+* volcano plot
+* Output of DEGs
+
+
+##1. LG vs HG
+
+how increasing glucose levels affects gene expression without fat?
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "LG")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_HG_vs_LG",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+
+```
+
+
+##2. HG vs HF
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "HG")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_HF_vs_HG",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+##3. HF vs PTS
+
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "HF")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_PTS_vs_HF",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+
+
+
+##4. HF vs QUE
+
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "HF")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_QUE_vs_HF",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+
+
+
+##5. PTS vs QUE
+
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "PTS")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_QUE_vs_PTS",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+
+##6. LG vs PTS
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "LG")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_PTS_vs_LG",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+
+##7. LG vs QUE
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "LG")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+de_res <- results(dds,
+                  name="condition_QUE_vs_LG",
+                  pAdjustMethod = "BH", 
+                  alpha = alpha) 
+summary(de_res)
+temp <- as.data.table(de_res)
+temp <- data.table(geneID = row.names(de_res), temp)
+head(temp[padj <= alpha, ])
+temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+temp
+```
+
+
