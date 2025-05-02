@@ -76,6 +76,8 @@ visualize_degs <- function(DEG_results, alpha, log2FC){
 
 
 data_path <- "~/GitHub/RNAseq_ribodepleted/output/counts/biotypes"
+out_path <- "~/GitHub/RNAseq_ribodepleted/output/deseq2"
+  
 theme_set(theme_bw())
 
 ```
@@ -99,13 +101,40 @@ The first step is to load the selected expression data and format the condition 
 ```{r}
 # Read exp table
 input_file <- file.path(data_path, "protein_coding_exp_filtered-S10-R6.tsv")
-exp_df <- read.table(input_file, header = TRUE)
+exp_df <- fread(input = input_file, drop = c("P2_S2", "Q3_S1"))
+
+
+# Connect to the Ensembl mart
+ensembl <- useEnsembl(
+  biomart    = "genes",
+  dataset    = "hsapiens_gene_ensembl")
+
+# Query for gene symbol
+bm <- getBM(
+    attributes = c("ensembl_gene_id", "external_gene_name"),
+    filters    = "ensembl_gene_id",
+    values     = exp_df$gene_id,
+    mart       = ensembl)
+exp_df <- merge.data.table(x = bm, y = exp_df, 
+                           by.x = "ensembl_gene_id", by.y = "gene_id", 
+                           all.x = FALSE, all.y = TRUE)
+exp_df <- data.table(exp_df)
+
+# Remove genes with no gene symbol
+exp_df <- exp_df[external_gene_name != ""]
+
+# Only one gene symbol has two ENSEMBL IDs so we handle it separately
+exp_df[external_gene_name == "POLR2J3", external_gene_name := paste(external_gene_name, 
+                                                                    ensembl_gene_id, 
+                                                                    sep = "_")]
 
 # Convert data.table to integer matrix
 exp_matrix <- exp_df %>%
-  dplyr::select(!gene_id) %>%
+  dplyr::select(!ensembl_gene_id) %>%
+  dplyr::select(!external_gene_name) %>%
   as.matrix()
-rownames(exp_matrix) <- exp_df$gene_id
+rownames(exp_matrix) <- exp_df$external_gene_name
+
 
 # Capture metadata in data frame
 condition <- colnames(exp_matrix) %>% 
@@ -138,8 +167,8 @@ Based on the experimental groups we created the appropriate labels and encoded c
 For consistency, we'll define the parameters for differential expression here:
 
 ```{r}
-alpha <- 0.05
-log2FC <- 2
+alpha <- 0.01
+log2FC <- 1
 ```
 
 The comparisons we'll be looking into are the following:
@@ -186,15 +215,36 @@ resultsNames(dds)
 
 
 ```{r}
+
+comparison <- "condition_HG_vs_LG"
+
 de_res <- results(dds,
-                  name="condition_HG_vs_LG",
+                  name=comparison,
                   pAdjustMethod = "BH", 
                   alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
-temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
-temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
 temp
 
 ```
@@ -221,15 +271,36 @@ resultsNames(dds)
 
 
 ```{r}
+
+comparison <- "condition_HF_vs_HG"
+
 de_res <- results(dds,
-                  name="condition_HF_vs_HG",
+                  name=comparison,
                   pAdjustMethod = "BH", 
                   alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
-temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
-temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
 temp
 ```
 
@@ -255,16 +326,38 @@ resultsNames(dds)
 
 
 ```{r}
+ 
+comparison <- "condition_PTS_vs_HF"
+
 de_res <- results(dds,
-                  name="condition_PTS_vs_HF",
+                  name=comparison,
                   pAdjustMethod = "BH", 
                   alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
-temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
-temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
 temp
+
 ```
 
 
@@ -292,15 +385,36 @@ resultsNames(dds)
 
 
 ```{r}
+
+comparison <- "condition_QUE_vs_HF"
+
 de_res <- results(dds,
-                  name="condition_QUE_vs_HF",
+                  name=comparison,
                   pAdjustMethod = "BH", 
                   alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
-temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
-temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
 temp
 ```
 

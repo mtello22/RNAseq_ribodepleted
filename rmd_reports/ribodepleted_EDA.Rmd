@@ -219,6 +219,10 @@ for(current in biotypes){
 count_df <- read.table(file.path(data_path, "biotypes", "protein_coding_exp.tsv"), 
                        header = TRUE) 
 
+# count_df <- count_df %>%
+#   dplyr::select(!P2_S2) %>%
+#   dplyr::select(!Q3_S1)
+
 count_df %>%
   head()
 

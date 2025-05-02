@@ -3,3 +3,4 @@ bin/r_scripts/.Rhistory
 *.out.tab
 *.tsv
 *.gz
+*.xlsx
