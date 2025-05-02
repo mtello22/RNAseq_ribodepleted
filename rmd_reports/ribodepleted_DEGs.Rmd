@@ -150,10 +150,10 @@ condition <- case_when(
     condition == "Q" ~ "QUE")
 # Create variables for DE analysis
 annot <- data.frame(condition = factor(condition, levels = c("LG", "HG", "HF", "PTS", "QUE")),
-                    Hglucose  = ifelse(condition == "LG", 0, 1),
-                    Hfat      = ifelse(condition %in% c("LG", "HG"), 0, 1),
-                    PTS       = ifelse(condition == "PTS", 1, 0),
-                    QUE       = ifelse(condition == "QUE", 1, 0),
+                    Hglucose  = factor(ifelse(condition == "LG", 0, 1)),
+                    Hfat      = factor(ifelse(condition %in% c("LG", "HG"), 0, 1)),
+                    PTS       = factor(ifelse(condition == "PTS", 1, 0)),
+                    QUE       = factor(ifelse(condition == "QUE", 1, 0)),
                     row.names = colnames(exp_matrix))
 
 annot 
@@ -220,8 +220,7 @@ comparison <- "condition_HG_vs_LG"
 
 de_res <- results(dds,
                   name=comparison,
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
+                  pAdjustMethod = "BH") 
 temp <- as.data.table(de_res)
 de_res <- data.table(geneID = row.names(de_res), temp)
 
@@ -276,8 +275,7 @@ comparison <- "condition_HF_vs_HG"
 
 de_res <- results(dds,
                   name=comparison,
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
+                  pAdjustMethod = "BH") 
 temp <- as.data.table(de_res)
 de_res <- data.table(geneID = row.names(de_res), temp)
 
@@ -331,8 +329,7 @@ comparison <- "condition_PTS_vs_HF"
 
 de_res <- results(dds,
                   name=comparison,
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
+                  pAdjustMethod = "BH") 
 temp <- as.data.table(de_res)
 de_res <- data.table(geneID = row.names(de_res), temp)
 
@@ -390,8 +387,7 @@ comparison <- "condition_QUE_vs_HF"
 
 de_res <- results(dds,
                   name=comparison,
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
+                  pAdjustMethod = "BH") 
 temp <- as.data.table(de_res)
 de_res <- data.table(geneID = row.names(de_res), temp)
 
@@ -424,69 +420,108 @@ temp
 ##5. PTS vs QUE
 
 
+```{r}
+
+# # Make DESeq object
+# dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+#                               colData = annot,
+#                               design= ~ Hglucose + Hfat + PTS + QUE)
+# # Run DESeq2
+# dds <- DESeq(dds)
+# 
+# # Print comparisons made
+# resultsNames(dds)
+# 
+# # Contrast positions:
+# # 1. Intercept        = LG baseline
+# # 2. Hglucose_1_vs_0  = LG  → HG  (add high glucose)
+# # 3. Hfat_1_vs_0      = HG  → HF  (add high fat)
+# # 4. PTS_1_vs_0       = HF  → PTS (add PTS)
+# # 5. QUE_1_vs_0       = HF  → QUE (add QUE)
+# de_res <- results(dds,
+#                   contrast = c(0, 0, 0, 1, -1 ), # Reference is PTS (4 element)
+#                   pAdjustMethod = "BH") 
+
+```
+
 
 ```{r}
 
-# Re-define base condition
+comparison <- "condition_QUE_vs_PTS"
+
 annot$condition <- relevel(annot$condition, ref = "PTS")
+
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
                               design= ~ condition)
 
-# Run DESeq2
-dds <- DESeq(dds)
 
-# Print comparisons made
-resultsNames(dds)
-```
-
-
-```{r}
-de_res <- results(dds,
-                  name="condition_QUE_vs_PTS",
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
 temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
 temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
 temp
 ```
+
 
 
 ##6. LG vs PTS
 
 
 ```{r}
+comparison <- "condition_PTS_vs_LG"
 
-# Re-define base condition
 annot$condition <- relevel(annot$condition, ref = "LG")
+
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
                               design= ~ condition)
 
-# Run DESeq2
-dds <- DESeq(dds)
 
-# Print comparisons made
-resultsNames(dds)
-```
-
-
-```{r}
-de_res <- results(dds,
-                  name="condition_PTS_vs_LG",
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
 temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
 temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
 temp
+
 ```
 
 
@@ -495,32 +530,42 @@ temp
 
 ```{r}
 
-# Re-define base condition
+comparison <- "condition_QUE_vs_LG"
+
 annot$condition <- relevel(annot$condition, ref = "LG")
+
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
                               design= ~ condition)
 
-# Run DESeq2
-dds <- DESeq(dds)
 
-# Print comparisons made
-resultsNames(dds)
-```
-
-
-```{r}
-de_res <- results(dds,
-                  name="condition_QUE_vs_LG",
-                  pAdjustMethod = "BH", 
-                  alpha = alpha) 
-summary(de_res)
 temp <- as.data.table(de_res)
 temp <- data.table(geneID = row.names(de_res), temp)
-head(temp[padj <= alpha, ])
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
 temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
 temp
+
 ```
+
+
 
 
