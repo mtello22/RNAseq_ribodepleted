@@ -36,7 +36,7 @@ bm <- getBM(
     filters    = "ensembl_gene_id",
     values     = exp_df$gene_id,
     mart       = ensembl)
-exp_df <- merge.data.table(x = bm, y = exp_df, 
+exp_df <- merge.data.table(x = as.data.table(bm), y = exp_df, 
                            by.x = "ensembl_gene_id", by.y = "gene_id", 
                            all.x = FALSE, all.y = TRUE)
 exp_df <- data.table(exp_df)
@@ -286,11 +286,13 @@ temp
 
 ![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-6-2.png)<!-- -->
 
-\##3. HF vs PTS
+\##3. LG vs HF
+
+how increasing glucose levels affects gene expression without fat?
 
 ``` r
 # Re-define base condition
-annot$condition <- relevel(annot$condition, ref = "HF")
+annot$condition <- relevel(annot$condition, ref = "LG")
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
@@ -317,11 +319,11 @@ dds <- DESeq(dds)
 resultsNames(dds)
 ```
 
-    ## [1] "Intercept"           "condition_HG_vs_HF"  "condition_LG_vs_HF" 
-    ## [4] "condition_PTS_vs_HF" "condition_QUE_vs_HF"
+    ## [1] "Intercept"           "condition_HG_vs_LG"  "condition_HF_vs_LG" 
+    ## [4] "condition_PTS_vs_LG" "condition_QUE_vs_LG"
 
 ``` r
-comparison <- "condition_PTS_vs_HF"
+comparison <- "condition_HF_vs_LG"
 
 de_res <- results(dds,
                   name=comparison,
@@ -361,7 +363,7 @@ temp
 
 ![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-8-2.png)<!-- -->
 
-\##4. HF vs QUE
+\##3. HF vs PTS
 
 ``` r
 # Re-define base condition
@@ -392,11 +394,11 @@ dds <- DESeq(dds)
 resultsNames(dds)
 ```
 
-    ## [1] "Intercept"           "condition_HG_vs_HF"  "condition_LG_vs_HF" 
+    ## [1] "Intercept"           "condition_LG_vs_HF"  "condition_HG_vs_HF" 
     ## [4] "condition_PTS_vs_HF" "condition_QUE_vs_HF"
 
 ``` r
-comparison <- "condition_QUE_vs_HF"
+comparison <- "condition_PTS_vs_HF"
 
 de_res <- results(dds,
                   name=comparison,
@@ -435,6 +437,81 @@ temp
     ## [[2]]
 
 ![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->
+
+\##4. HF vs QUE
+
+``` r
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "HF")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+```
+
+    ## estimating size factors
+
+    ## estimating dispersions
+
+    ## gene-wise dispersion estimates
+
+    ## mean-dispersion relationship
+
+    ## final dispersion estimates
+
+    ## fitting model and testing
+
+``` r
+# Print comparisons made
+resultsNames(dds)
+```
+
+    ## [1] "Intercept"           "condition_LG_vs_HF"  "condition_HG_vs_HF" 
+    ## [4] "condition_PTS_vs_HF" "condition_QUE_vs_HF"
+
+``` r
+comparison <- "condition_QUE_vs_HF"
+
+de_res <- results(dds,
+                  name=comparison,
+                  pAdjustMethod = "BH") 
+temp <- as.data.table(de_res)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+```
+
+    ## [[1]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+    ## 
+    ## [[2]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->
 
 \##5. PTS vs QUE
 
@@ -498,12 +575,12 @@ temp
 
     ## [[1]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
 
     ## 
     ## [[2]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-14-2.png)<!-- -->
 
 \##6. LG vs PTS
 
@@ -545,12 +622,12 @@ temp
 
     ## [[1]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
 
     ## 
     ## [[2]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-13-2.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-15-2.png)<!-- -->
 
 \##7. LG vs QUE
 
@@ -592,9 +669,207 @@ temp
 
     ## [[1]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
 
     ## 
     ## [[2]]
 
-![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-14-2.png)<!-- -->
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-16-2.png)<!-- -->
+
+# Testing LRT for this analysis
+
+## Does adding PTS or QUE significantly improve model fit??
+
+``` r
+# exp_matrix
+# annot
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + PTS + QUE
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + PTS + QUE,
+                   reduced = ~ Hglucose + Hfat)
+```
+
+    ## estimating size factors
+
+    ## estimating dispersions
+
+    ## gene-wise dispersion estimates
+
+    ## mean-dispersion relationship
+
+    ## final dispersion estimates
+
+    ## fitting model and testing
+
+``` r
+res3 <- results(dds3)
+```
+
+Genes with small LRT p-values are those whose expression under PTS or
+QUE cannot be explained just by the fatty-liver progression (Hglucose +
+Hfat)—i.e. they show a recovery effect.
+
+``` r
+temp <- visualize_degs(as.data.table(res3), alpha, log2FC)
+temp
+```
+
+    ## [[1]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
+
+    ## 
+    ## [[2]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-18-2.png)<!-- -->
+
+Genes upregulated had a positive increase in expression when given the
+treatment. Downregulated genes had a decrease in expression when given
+the treatment.
+
+This test do not separate the effects of any particular treatment.
+
+## Does adding PTS significantly improve model fit??
+
+``` r
+comparison <- "condition_PTS_vs_HF"
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + PTS
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + PTS,
+                   reduced = ~ Hglucose + Hfat)
+```
+
+    ## estimating size factors
+
+    ## estimating dispersions
+
+    ## gene-wise dispersion estimates
+
+    ## mean-dispersion relationship
+
+    ## final dispersion estimates
+
+    ## fitting model and testing
+
+``` r
+de_res <- as.data.table(results(dds3))
+
+out_file <- file.path(out_path, paste("deseq2_LRT_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+```
+
+    ## [[1]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
+
+    ## 
+    ## [[2]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-19-2.png)<!-- -->
+
+## Does adding QUE significantly improve model fit??
+
+``` r
+comparison <- "condition_QUE_vs_HF"
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + QUE
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + QUE,
+                   reduced = ~ Hglucose + Hfat)
+```
+
+    ## estimating size factors
+
+    ## estimating dispersions
+
+    ## gene-wise dispersion estimates
+
+    ## mean-dispersion relationship
+
+    ## final dispersion estimates
+
+    ## fitting model and testing
+
+``` r
+de_res <- as.data.table(results(dds3))
+
+out_file <- file.path(out_path, paste("deseq2_LRT_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+```
+
+    ## [[1]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+
+    ## 
+    ## [[2]]
+
+![](ribodepleted_DEGs_files/figure-gfm/unnamed-chunk-20-2.png)<!-- -->

@@ -115,7 +115,7 @@ bm <- getBM(
     filters    = "ensembl_gene_id",
     values     = exp_df$gene_id,
     mart       = ensembl)
-exp_df <- merge.data.table(x = bm, y = exp_df, 
+exp_df <- merge.data.table(x = as.data.table(bm), y = exp_df, 
                            by.x = "ensembl_gene_id", by.y = "gene_id", 
                            all.x = FALSE, all.y = TRUE)
 exp_df <- data.table(exp_df)
@@ -301,6 +301,68 @@ if(!file.exists(out_file)){
 temp <- visualize_degs(de_res, alpha, log2FC)
 temp
 ```
+
+##3. LG vs HF
+
+how increasing glucose levels affects gene expression without fat?
+
+
+```{r}
+
+# Re-define base condition
+annot$condition <- relevel(annot$condition, ref = "LG")
+# Make DESeq object
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData = annot,
+                              design= ~ condition)
+
+# Run DESeq2
+dds <- DESeq(dds)
+
+# Print comparisons made
+resultsNames(dds)
+```
+
+
+```{r}
+
+comparison <- "condition_HF_vs_LG"
+
+de_res <- results(dds,
+                  name=comparison,
+                  pAdjustMethod = "BH") 
+temp <- as.data.table(de_res)
+de_res <- data.table(geneID = row.names(de_res), temp)
+
+
+out_file <- file.path(out_path, paste("deseq2_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+
+```
+
+
+
+
+
+
 
 ##3. HF vs PTS
 
@@ -565,6 +627,148 @@ temp <- visualize_degs(as.data.table(de_res), alpha, log2FC)
 temp
 
 ```
+
+
+
+# Testing LRT for this analysis 
+
+## Does adding PTS or QUE significantly improve model fit??
+
+```{r}
+# exp_matrix
+# annot
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + PTS + QUE
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + PTS + QUE,
+                   reduced = ~ Hglucose + Hfat)
+res3 <- results(dds3)
+
+
+```
+
+Genes with small LRT p-values are those whose expression under PTS or QUE cannot be explained just by the fatty-liver progression (Hglucose + Hfat)—i.e. they show a recovery effect.
+
+
+
+```{r}
+
+temp <- visualize_degs(as.data.table(res3), alpha, log2FC)
+temp
+
+```
+
+Genes upregulated had a positive increase in expression when given the treatment. Downregulated genes had a decrease in expression when given the treatment. 
+
+This test do not separate the effects of any particular treatment. 
+
+
+## Does adding PTS significantly improve model fit??
+
+
+```{r}
+
+comparison <- "condition_PTS_vs_HF"
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + PTS
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + PTS,
+                   reduced = ~ Hglucose + Hfat)
+de_res <- as.data.table(results(dds3))
+
+out_file <- file.path(out_path, paste("deseq2_LRT_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+
+```
+
+
+## Does adding QUE significantly improve model fit??
+
+
+```{r}
+
+comparison <- "condition_QUE_vs_HF"
+
+# * Hglucose: captures the jump from LG → HG
+# * Hfat: captures the jump from HG → HF
+# * PTS, QUE: each captures the additional effect of that treatment
+
+dds3 <- DESeqDataSetFromMatrix(
+  countData = exp_matrix,
+  colData   = annot,
+  design    = ~ Hglucose + Hfat + QUE
+)
+
+
+dds3 <- DESeq(dds3, test    = "LRT",
+                   full    = ~ Hglucose + Hfat + QUE,
+                   reduced = ~ Hglucose + Hfat)
+de_res <- as.data.table(results(dds3))
+
+out_file <- file.path(out_path, paste("deseq2_LRT_", 
+                                      str_replace_all(comparison, "_", ""),
+                                      "_FDR", str_replace(alpha, "\\.", ""),
+                                      ".tsv", sep = ""))
+if(!file.exists(out_file)){
+  output_table = de_res
+  output_table[, log2FoldChange := round(log2FoldChange, 4)]
+  output_table[, baseMean       := round(baseMean, 4)]
+  output_table[, lfcSE          := round(lfcSE, 4)]
+  output_table[, stat           := round(stat, 4)]
+  output_table[, pvalue         := round(pvalue, 4)]
+  output_table[, padj           := round(padj, 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  fwrite(x = output_table, file = out_file, 
+         append = FALSE, quote = FALSE, sep = '\t', 
+         row.names = FALSE, col.names = TRUE)
+}
+
+temp <- visualize_degs(de_res, alpha, log2FC)
+temp
+
+```
+
+
+
+
 
 
 
