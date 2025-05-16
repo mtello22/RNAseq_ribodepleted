@@ -912,7 +912,7 @@ recovery_general[, recovery := ifelse(genes %in% genes_rec_down, "Down", "Up")]
 ## ------------------------------------------
 ## 1. pick the most significant “recovery” gene
 ## ------------------------------------------
-gene_id <- genes_rec_up[20]
+gene_id <- genes_rec_up[19]
 # gene_id <- genes_rec_down[36]
 
 ## ------------------------------------------
@@ -920,22 +920,24 @@ gene_id <- genes_rec_up[20]
 ## ------------------------------------------
 fiss <- plotCounts(
   dds, gene_id,
-  intgroup = c("recovery", "time_num"),   # columns in colData(dds)
+  intgroup = c("recovery", "time_num", "condition"),   # columns in colData(dds)
   returnData = TRUE
 )
 
+fiss <- as.data.table(fiss)
 ## turn the numeric time into 0,1,2 for nicer axis labels
-fiss$time_stage <- as.numeric(as.character(fiss$time_num))  
+fiss[, condition := ifelse(condition == "PTS", "PTS", ifelse(condition == "QUE", "QUE", "Disease"))]
 
 ## ------------------------------------------
 ## 3. plot
 ## ------------------------------------------
 
 ggplot(fiss,
-       aes(x = time_stage,
+       aes(x = time_num,
            y = count,
            colour = recovery,
-           group  = recovery)) +
+           group  = recovery,
+           shape  = condition)) +
   geom_point(size = 2, alpha = 0.7) +
   stat_summary(fun = mean, geom = "line", linewidth = 1) +
   scale_x_continuous(
