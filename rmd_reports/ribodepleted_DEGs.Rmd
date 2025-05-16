@@ -105,9 +105,8 @@ exp_df <- fread(input = input_file, drop = c("P2_S2", "Q3_S1"))
 
 
 # Connect to the Ensembl mart
-ensembl <- useEnsembl(
-  biomart    = "genes",
-  dataset    = "hsapiens_gene_ensembl")
+ensembl <- useEnsembl("genes")
+ensembl <- useDataset(dataset = "hsapiens_gene_ensembl", mart = ensembl)
 
 # Query for gene symbol
 bm <- getBM(
@@ -680,44 +679,38 @@ This test do not separate the effects of any particular treatment.
 
 comparison <- "condition_PTS_vs_HF"
 
-# * Hglucose: captures the jump from LG → HG
-# * Hfat: captures the jump from HG → HF
-# * PTS, QUE: each captures the additional effect of that treatment
+de_res <- results(dds3, name="PTS_1_vs_0")
 
-dds3 <- DESeqDataSetFromMatrix(
-  countData = exp_matrix,
-  colData   = annot,
-  design    = ~ Hglucose + Hfat + PTS
-)
+temp <- visualize_degs(de_res, alpha, log2FC)
 
+temp
 
-dds3 <- DESeq(dds3, test    = "LRT",
-                   full    = ~ Hglucose + Hfat + PTS,
-                   reduced = ~ Hglucose + Hfat)
-de_res <- as.data.table(results(dds3))
-
+# Save 
 out_file <- file.path(out_path, paste("deseq2_LRT_", 
                                       str_replace_all(comparison, "_", ""),
                                       "_FDR", str_replace(alpha, "\\.", ""),
                                       ".tsv", sep = ""))
 if(!file.exists(out_file)){
-  output_table = de_res
+  output_table = data.table(geneID = row.names(de_res), 
+                            as.data.table(de_res))
   output_table[, log2FoldChange := round(log2FoldChange, 4)]
   output_table[, baseMean       := round(baseMean, 4)]
   output_table[, lfcSE          := round(lfcSE, 4)]
   output_table[, stat           := round(stat, 4)]
   output_table[, pvalue         := round(pvalue, 4)]
   output_table[, padj           := round(padj, 4)]
-  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange)) * 
+                                       sign(log2FoldChange), 
+                                     4)]
   fwrite(x = output_table, file = out_file, 
          append = FALSE, quote = FALSE, sep = '\t', 
          row.names = FALSE, col.names = TRUE)
 }
 
-temp <- visualize_degs(de_res, alpha, log2FC)
-temp
 
 ```
+
+
 
 
 ## Does adding QUE significantly improve model fit??
@@ -727,45 +720,150 @@ temp
 
 comparison <- "condition_QUE_vs_HF"
 
-# * Hglucose: captures the jump from LG → HG
-# * Hfat: captures the jump from HG → HF
-# * PTS, QUE: each captures the additional effect of that treatment
+de_res <- results(dds3, name="QUE_1_vs_0")
 
-dds3 <- DESeqDataSetFromMatrix(
-  countData = exp_matrix,
-  colData   = annot,
-  design    = ~ Hglucose + Hfat + QUE
-)
+temp <- visualize_degs(de_res, alpha, log2FC)
 
+temp
 
-dds3 <- DESeq(dds3, test    = "LRT",
-                   full    = ~ Hglucose + Hfat + QUE,
-                   reduced = ~ Hglucose + Hfat)
-de_res <- as.data.table(results(dds3))
-
+# Save 
 out_file <- file.path(out_path, paste("deseq2_LRT_", 
                                       str_replace_all(comparison, "_", ""),
                                       "_FDR", str_replace(alpha, "\\.", ""),
                                       ".tsv", sep = ""))
 if(!file.exists(out_file)){
-  output_table = de_res
+  output_table = data.table(geneID = row.names(de_res), 
+                            as.data.table(de_res))
   output_table[, log2FoldChange := round(log2FoldChange, 4)]
   output_table[, baseMean       := round(baseMean, 4)]
   output_table[, lfcSE          := round(lfcSE, 4)]
   output_table[, stat           := round(stat, 4)]
   output_table[, pvalue         := round(pvalue, 4)]
   output_table[, padj           := round(padj, 4)]
-  output_table[, FoldChange := round((2**abs(log2FoldChange))*sign(log2FoldChange), 4)]
+  output_table[, FoldChange := round((2**abs(log2FoldChange)) * 
+                                       sign(log2FoldChange), 
+                                     4)]
   fwrite(x = output_table, file = out_file, 
          append = FALSE, quote = FALSE, sep = '\t', 
          row.names = FALSE, col.names = TRUE)
 }
 
-temp <- visualize_degs(de_res, alpha, log2FC)
-temp
+```
+
+
+## Identifying recovery
+
+
+```{r}
+
+meta <- data.frame(
+    condition = factor(condition, levels = c("LG","HG","HF","PTS","QUE")),
+    row.names = colnames(exp_matrix))
+
+## numeric pseudo-time (0,1,2) for the disease progression
+meta$time_num <- c(LG = 0,
+                   HG = 1,
+                   HF = 2,
+                   PTS = 2,   # keep PTS/QUE at the same ‘time‐point’ as HF
+                   QUE = 2)[ meta$condition ]
+
+## binary “recovery” flag
+meta$recovery <- factor(meta$condition %in% c("PTS","QUE"),
+                        levels = c(FALSE, TRUE),
+                        labels = c("Disease", "Recovery"))
+
+
+dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
+                              colData   = meta,
+                              design    = ~ time_num + recovery)
+
+dds <- DESeq(dds)
+
+res_trend <- results(dds, name = "time_num")
+
+res_rec   <- results(dds, name = "recovery_Recovery_vs_Disease")
+
 
 ```
 
+
+
+```{r}
+
+alpha <- 0.05          # FDR cutoff
+lfc   <- 1             # effect-size cutoff (log2FC)
+
+## 4a: genes that go UP LG→HG→HF ...
+up_trend <- which(res_trend$padj < alpha & 
+                    res_trend$log2FoldChange >  lfc)
+
+## ... and come DOWN with PTS/QUE
+rec_down <- up_trend[ which(res_rec$padj[up_trend] < alpha &
+                            res_rec$log2FoldChange[up_trend] < -lfc)]
+
+## 4b: genes that go DOWN LG→HG→HF ...
+down_trend <- which(res_trend$padj < alpha & 
+                      res_trend$log2FoldChange < -lfc)
+## ... and come UP with PTS/QUE
+rec_up <- down_trend[which(res_rec$padj[down_trend] < alpha & 
+                           res_rec$log2FoldChange[down_trend] >  lfc)]
+
+## turn indices into gene IDs if desired
+genes_rec_down <- rownames(dds)[rec_down]
+genes_rec_up   <- rownames(dds)[rec_up]
+
+recovery_general <- data.table(genes = c(genes_rec_down, genes_rec_up))
+recovery_general[, recovery := ifelse(genes %in% genes_rec_down, "Down", "Up")]
+
+
+```
+
+
+```{r}
+
+## ------------------------------------------
+## 1. pick the most significant “recovery” gene
+## ------------------------------------------
+gene_id <- genes_rec_up[20]
+# gene_id <- genes_rec_down[36]
+
+## ------------------------------------------
+## 2. extract normalised counts + metadata
+## ------------------------------------------
+fiss <- plotCounts(
+  dds, gene_id,
+  intgroup = c("recovery", "time_num"),   # columns in colData(dds)
+  returnData = TRUE
+)
+
+## turn the numeric time into 0,1,2 for nicer axis labels
+fiss$time_stage <- as.numeric(as.character(fiss$time_num))  
+
+## ------------------------------------------
+## 3. plot
+## ------------------------------------------
+
+ggplot(fiss,
+       aes(x = time_stage,
+           y = count,
+           colour = recovery,
+           group  = recovery)) +
+  geom_point(size = 2, alpha = 0.7) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  scale_x_continuous(
+      breaks = 0:3,
+      labels = c("LG", "HG", "HF", "PTS / QUE"),
+      expand = expansion(mult = 0.05)
+  ) +
+  scale_y_log10("normalised count (log scale)") +
+  labs(
+      title = paste("Gene:", gene_id),
+      x     = "Experimental stage",
+      colour = "Condition"
+  ) +
+  theme_classic(base_size = 12)
+
+```
 
 
 
