@@ -214,7 +214,7 @@ temp
 
 ``` r
 # Re-define base condition
-annot$condition <- relevel(annot$condition, ref = "HG")
+annot$condition <- relevel(annot$condition, ref = "HF")
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
@@ -241,11 +241,11 @@ dds <- DESeq(dds)
 resultsNames(dds)
 ```
 
-    ## [1] "Intercept"           "condition_LG_vs_HG"  "condition_HF_vs_HG" 
-    ## [4] "condition_PTS_vs_HG" "condition_QUE_vs_HG"
+    ## [1] "Intercept"           "condition_LG_vs_HF"  "condition_HG_vs_HF" 
+    ## [4] "condition_PTS_vs_HF" "condition_QUE_vs_HF"
 
 ``` r
-comparison <- "condition_HF_vs_HG"
+comparison <- "condition_HG_vs_HF"
 
 de_res <- results(dds,
                   name=comparison,
@@ -291,7 +291,7 @@ how increasing glucose levels affects gene expression without fat?
 
 ``` r
 # Re-define base condition
-annot$condition <- relevel(annot$condition, ref = "LG")
+annot$condition <- relevel(annot$condition, ref = "HF")
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
@@ -318,11 +318,11 @@ dds <- DESeq(dds)
 resultsNames(dds)
 ```
 
-    ## [1] "Intercept"           "condition_HG_vs_LG"  "condition_HF_vs_LG" 
-    ## [4] "condition_PTS_vs_LG" "condition_QUE_vs_LG"
+    ## [1] "Intercept"           "condition_LG_vs_HF"  "condition_HG_vs_HF" 
+    ## [4] "condition_PTS_vs_HF" "condition_QUE_vs_HF"
 
 ``` r
-comparison <- "condition_HF_vs_LG"
+comparison <- "condition_LG_vs_HF"
 
 de_res <- results(dds,
                   name=comparison,
@@ -882,7 +882,7 @@ res_rec   <- results(dds, name = "recovery_Recovery_vs_Disease")
 ```
 
 ``` r
-alpha <- 0.05          # FDR cutoff
+alpha <- 0.01          # FDR cutoff
 lfc   <- 1             # effect-size cutoff (log2FC)
 
 ## 4a: genes that go UP LG→HG→HF ...
@@ -906,14 +906,50 @@ genes_rec_up   <- rownames(dds)[rec_up]
 
 recovery_general <- data.table(genes = c(genes_rec_down, genes_rec_up))
 recovery_general[, recovery := ifelse(genes %in% genes_rec_down, "Down", "Up")]
+
+# # Save 
+# out_file <- file.path(out_path, paste("deseq2_PseudoTime_", 
+#                                       "RecoveryList",
+#                                       "_FDR", str_replace(alpha, "\\.", ""),
+#                                       ".tsv", sep = ""))
+# if(!file.exists(out_file)){
+#   output_table = recovery_general
+#   fwrite(x = output_table, file = out_file, 
+#          append = FALSE, quote = FALSE, sep = '\t', 
+#          row.names = FALSE, col.names = TRUE)
+# }
+# 
+# 
+# temp <- data.table(counts(dds, normalized=TRUE), keep.rownames = TRUE)
+# setnames(temp, "rn", "geneID")
+# 
+# temp[,  C := rowMeans(.SD), .SDcols = c("C1_S44", "C2_S45", "C3_S46")]
+# temp[,  F := rowMeans(.SD), .SDcols = c("F1_S47","F2_S48","F3_S49","F4_S50")]
+# temp[,  L := rowMeans(.SD), .SDcols = c("L1_S57", "L2_S58", "L3_S59")]
+# temp[,  P := rowMeans(.SD), .SDcols = c("P1_S54", "P2_S55", "P3_S56")]
+# temp[,  Q := rowMeans(.SD), .SDcols = c("Q1_S51", "Q2_S52", "Q3_S53")]
+# 
+# temp <- temp[, .SD, .SDcols = c("geneID", "C", "F", "L", "P", "Q")]
+# setnames(temp, c("geneID", "C", "F", "L", "P", "Q"), c("geneID", "HG", "HF", "LG", "PTS", "QUE"))
+# 
+# 
+# # Save 
+# out_file <- file.path(out_path, "deseq2_avg_norm_counts.tsv")
+# if(!file.exists(out_file)){
+#   output_table = temp
+#   fwrite(x = output_table, file = out_file, 
+#          append = FALSE, quote = FALSE, sep = '\t', 
+#          row.names = FALSE, col.names = TRUE)
+# }
 ```
 
 ``` r
 ## ------------------------------------------
 ## 1. pick the most significant “recovery” gene
 ## ------------------------------------------
-gene_id <- genes_rec_up[19]
-# gene_id <- genes_rec_down[36]
+# gene_id <- "ANLN"
+# gene_id <- genes_rec_up[19]
+gene_id <- genes_rec_down[14]
 
 ## ------------------------------------------
 ## 2. extract normalised counts + metadata
