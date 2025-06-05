@@ -105,8 +105,9 @@ exp_df <- fread(input = input_file, drop = c("P2_S2", "Q3_S1"))
 
 
 # Connect to the Ensembl mart
-ensembl <- useEnsembl("genes")
-ensembl <- useDataset(dataset = "hsapiens_gene_ensembl", mart = ensembl)
+ensembl <- useEnsembl(biomart = "ensembl", 
+                      dataset = "hsapiens_gene_ensembl", 
+                      mirror = "asia")
 
 # Query for gene symbol
 bm <- getBM(
@@ -309,7 +310,7 @@ how increasing glucose levels affects gene expression without fat?
 ```{r}
 
 # Re-define base condition
-annot$condition <- relevel(annot$condition, ref = "HF")
+annot$condition <- relevel(annot$condition, ref = "LG")
 # Make DESeq object
 dds <- DESeqDataSetFromMatrix(countData = exp_matrix,
                               colData = annot,
@@ -325,7 +326,7 @@ resultsNames(dds)
 
 ```{r}
 
-comparison <- "condition_LG_vs_HF"
+comparison <- "condition_HF_vs_LG"
 
 de_res <- results(dds,
                   name=comparison,
